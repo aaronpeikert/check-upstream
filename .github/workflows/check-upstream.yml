@@ -15,7 +15,7 @@ env:
   CURRENT_VERSION: 'v1.18.0' # e.g. v2.15.4
   INCLUDE_PRERELEASE: 'false'
   INCLUDE_DRAFT: 'false'
-  CREATE_PR: 'true'
+  CREATE_PR: 'false'
   FILES_TO_MONITOR: |
     transformer_lens/components/rms_norm.py
 
