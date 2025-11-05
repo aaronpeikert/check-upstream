@@ -108,6 +108,7 @@ jobs:
             repository: ${{ env.MONITORED_REPO }}
             ref: ${{ steps.get_release.outputs.tag_name }}
             path: monitored
+            fetch-depth: 0
       - name: Prepare file list
         if: steps.compare_versions.outputs.is_newer == 'true'
         id: prepare_files
