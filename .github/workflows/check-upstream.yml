@@ -17,7 +17,7 @@ env:
   INCLUDE_DRAFT: 'false'
   CREATE_PR: 'true'
   FILES_TO_MONITOR: |
-    /transformer_lens/components/rms_norm.py
+    transformer_lens/components/rms_norm.py
 
 jobs:
   check-changes:
