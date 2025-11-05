@@ -1,0 +1,206 @@
+name: Check Dependency File Changes
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+  workflow_dispatch:
+    inputs:
+      force_check:
+        description: 'Force check even if up to date'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  # Configuration - Edit these values
+  MONITORED_REPO: 'TransformerLensOrg/TransformerLens'
+  CURRENT_VERSION: 'v1.18.0'
+  INCLUDE_PRERELEASE: 'false'
+  INCLUDE_DRAFT: 'false'
+  CREATE_PR: 'true'
+  FILES_TO_MONITOR: |
+    /transformer_lens/components/rms_norm.py
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Octokit
+        run: npm install @octokit/rest
+
+      - name: Get latest release
+        id: get_release
+        uses: actions/github-script@v7
+        env:
+          MONITORED_REPO: ${{ env.MONITORED_REPO }}
+          INCLUDE_PRERELEASE: ${{ env.INCLUDE_PRERELEASE }}
+          INCLUDE_DRAFT: ${{ env.INCLUDE_DRAFT }}
+        with:
+          script: |
+            const [owner, repo] = process.env.MONITORED_REPO.split('/');
+            const includePrerelease = process.env.INCLUDE_PRERELEASE === 'true';
+            const includeDraft = process.env.INCLUDE_DRAFT === 'true';
+            
+            console.log(`Fetching releases for ${owner}/${repo}`);
+            console.log(`Include prereleases: ${includePrerelease}`);
+            console.log(`Include drafts: ${includeDraft}`);
+            
+            const { data: releases } = await github.rest.repos.listReleases({
+              owner,
+              repo,
+              per_page: 100
+            });
+            
+            console.log(`Found ${releases.length} total releases`);
+            
+            // Find the first release that matches our criteria
+            const latestRelease = releases.find(release => {
+              if (release.draft && !includeDraft) {
+                return false;
+              }
+              if (release.prerelease && !includePrerelease) {
+                return false;
+              }
+              return true;
+            });
+            
+            if (!latestRelease) {
+              core.setFailed('No suitable release found');
+              return;
+            }
+            
+            console.log(`Latest release: ${latestRelease.tag_name}`);
+            console.log(`Published at: ${latestRelease.published_at}`);
+            
+            core.setOutput('tag_name', latestRelease.tag_name);
+            core.setOutput('name', latestRelease.name || latestRelease.tag_name);
+            core.setOutput('html_url', latestRelease.html_url);
+            core.setOutput('published_at', latestRelease.published_at);
+
+      - name: Compare versions
+        id: compare_versions
+        run: |
+          CURRENT="${{ env.CURRENT_VERSION }}"
+          LATEST="${{ steps.get_release.outputs.tag_name }}"
+          
+          echo "Current version: $CURRENT"
+          echo "Latest version: $LATEST"
+          
+          # Function to parse semantic version
+          parse_version() {
+            echo "$1" | sed 's/^v//' | awk -F. '{printf "%d%03d%03d", $1, $2, $3}'
+          }
+          
+          CURRENT_NUM=$(parse_version "$CURRENT")
+          LATEST_NUM=$(parse_version "$LATEST")
+          
+          echo "Current version number: $CURRENT_NUM"
+          echo "Latest version number: $LATEST_NUM"
+          
+          if [ "$LATEST_NUM" -le "$CURRENT_NUM" ]; then
+            echo "status=up_to_date" >> $GITHUB_OUTPUT
+            echo "is_newer=false" >> $GITHUB_OUTPUT
+            echo "✅ Already up to date!"
+          else
+            echo "status=new_version" >> $GITHUB_OUTPUT
+            echo "is_newer=true" >> $GITHUB_OUTPUT
+            echo "🆕 New version available!"
+          fi
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+            repository: ${{ env.MONITORED_REPO }}
+            path: monitored
+      - name: Prepare file list
+        if: steps.compare_versions.outputs.is_newer == 'true'
+        id: prepare_files
+        run: |
+          # Convert multiline FILES_TO_MONITOR to JSON array
+          FILES_JSON=$(echo "$FILES_TO_MONITOR" | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "files_json=$FILES_JSON" >> $GITHUB_OUTPUT
+          echo "Files to check:"
+          echo "$FILES_JSON" | jq -r '.[]'
+
+      - name: Check file changes
+        if: steps.compare_versions.outputs.is_newer == 'true'
+        id: check_files
+        run: |
+          cd monitored
+          
+          CURRENT_VERSION="${{ env.CURRENT_VERSION }}"
+          LATEST_VERSION="${{ steps.get_release.outputs.tag_name }}"
+          FILES_JSON='${{ steps.prepare_files.outputs.files_json }}'
+          
+          echo "Checking files between $CURRENT_VERSION and $LATEST_VERSION"
+          echo "=================================================="
+          
+          CHANGED_FILES=()
+          MISSING_FILES=()
+          UNCHANGED_FILES=()
+          
+          # Read files from JSON array
+          while IFS= read -r file; do
+            echo ""
+            echo "Checking: $file"
+            
+            # Check if file exists in both versions
+            if ! git cat-file -e "$CURRENT_VERSION:$file" 2>/dev/null; then
+              echo "  ⚠️  File not found in $CURRENT_VERSION"
+              MISSING_FILES+=("$file")
+              CHANGED_FILES+=("$file")
+              continue
+            fi
+            
+            if ! git cat-file -e "$LATEST_VERSION:$file" 2>/dev/null; then
+              echo "  ⚠️  File not found in $LATEST_VERSION"
+              MISSING_FILES+=("$file")
+              CHANGED_FILES+=("$file")
+              continue
+            fi
+            
+            # Check for changes using git diff
+            if git diff --quiet --ignore-all-space "$CURRENT_VERSION" "$LATEST_VERSION" -- "$file"; then
+              echo "  ✅ No changes detected"
+              UNCHANGED_FILES+=("$file")
+            else
+              echo "  ❌ Changes detected"
+              CHANGED_FILES+=("$file")
+            fi
+          done < <(echo "$FILES_JSON" | jq -r '.[]')
+          
+          echo ""
+          echo "=================================================="
+          echo "Summary:"
+          echo "  Total files checked: $(echo "$FILES_JSON" | jq 'length')"
+          echo "  Changed: ${#CHANGED_FILES[@]}"
+          echo "  Unchanged: ${#UNCHANGED_FILES[@]}"
+          echo "  Missing: ${#MISSING_FILES[@]}"
+          echo "=================================================="
+          
+          # Convert arrays to JSON
+          CHANGED_JSON=$(printf '%s\n' "${CHANGED_FILES[@]}" | jq -R . | jq -s .)
+          MISSING_JSON=$(printf '%s\n' "${MISSING_FILES[@]}" | jq -R . | jq -s .)
+          UNCHANGED_JSON=$(printf '%s\n' "${UNCHANGED_FILES[@]}" | jq -R . | jq -s .)
+          
+          # Set outputs
+          echo "changed_files=$CHANGED_JSON" >> $GITHUB_OUTPUT
+          echo "missing_files=$MISSING_JSON" >> $GITHUB_OUTPUT
+          echo "unchanged_files=$UNCHANGED_JSON" >> $GITHUB_OUTPUT
+          
+          if [ ${#CHANGED_FILES[@]} -gt 0 ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "⚠️  Changes detected in ${#CHANGED_FILES[@]} file(s)"
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "✅ No changes detected"
+          fi
