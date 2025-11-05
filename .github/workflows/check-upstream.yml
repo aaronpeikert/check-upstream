@@ -28,16 +28,7 @@ env:
 jobs:
   check-changes:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install Octokit
-        run: npm install @octokit/rest
-
       - name: Get latest release
         id: get_release
         uses: actions/github-script@v7
@@ -117,9 +108,11 @@ jobs:
             echo "🆕 New version available!"
           fi
       - name: Checkout repository
+        if: steps.compare_versions.outputs.is_newer == 'true'
         uses: actions/checkout@v5
         with:
             repository: ${{ env.MONITORED_REPO }}
+            ref: ${{ steps.get_release.outputs.tag_name }}
             path: monitored
       - name: Prepare file list
         if: steps.compare_versions.outputs.is_newer == 'true'
