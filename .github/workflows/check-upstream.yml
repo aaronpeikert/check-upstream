@@ -158,14 +158,6 @@ jobs:
           echo "  Unchanged: ${#UNCHANGED_FILES[@]}"
           echo "=================================================="
           
-          # Convert arrays to JSON
-          CHANGED_JSON=$(printf '%s\n' "${CHANGED_FILES[@]}" | jq -R . | jq -s .)
-          UNCHANGED_JSON=$(printf '%s\n' "${UNCHANGED_FILES[@]}" | jq -R . | jq -s .)
-          
-          # Set outputs
-          echo "changed_files=$CHANGED_JSON" >> $GITHUB_OUTPUT
-          echo "unchanged_files=$UNCHANGED_JSON" >> $GITHUB_OUTPUT
-          
           if [ ${#CHANGED_FILES[@]} -gt 0 ]; then
             echo "has_changes=true" >> $GITHUB_OUTPUT
             echo "⚠️  Changes detected in ${#CHANGED_FILES[@]} file(s)"
