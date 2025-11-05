@@ -12,7 +12,7 @@ permissions:
 env:
   # Configuration - Edit these values
   MONITORED_REPO: 'TransformerLensOrg/TransformerLens'
-  CURRENT_VERSION: 'v2.15.4'
+  CURRENT_VERSION: 'v1.18.0' # e.g. v2.15.4
   INCLUDE_PRERELEASE: 'false'
   INCLUDE_DRAFT: 'false'
   CREATE_PR: 'true'
