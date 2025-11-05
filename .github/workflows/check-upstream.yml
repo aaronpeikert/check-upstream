@@ -12,7 +12,7 @@ permissions:
 env:
   # Configuration - Edit these values
   MONITORED_REPO: 'TransformerLensOrg/TransformerLens'
-  CURRENT_VERSION: 'v1.18.0'
+  CURRENT_VERSION: 'v2.15.4'
   INCLUDE_PRERELEASE: 'false'
   INCLUDE_DRAFT: 'false'
   CREATE_PR: 'true'
@@ -128,6 +128,7 @@ jobs:
           CURRENT_VERSION="${{ env.CURRENT_VERSION }}"
           LATEST_VERSION="${{ steps.get_release.outputs.tag_name }}"
           FILES_JSON='${{ steps.prepare_files.outputs.files_json }}'
+          CREATE_PR="${{ env.CREATE_PR }}"
           
           echo "Checking files between $CURRENT_VERSION and $LATEST_VERSION"
           echo "=================================================="
@@ -161,7 +162,13 @@ jobs:
           if [ ${#CHANGED_FILES[@]} -gt 0 ]; then
             echo "has_changes=true" >> $GITHUB_OUTPUT
             echo "⚠️  Changes detected in ${#CHANGED_FILES[@]} file(s)"
+            if $CREATE_PR; then
+                exit 0
+            else
+                exit 1
+            fi
           else
             echo "has_changes=false" >> $GITHUB_OUTPUT
             echo "✅ No changes detected"
+            exit 0
           fi
