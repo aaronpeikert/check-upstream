@@ -138,28 +138,12 @@ jobs:
           echo "=================================================="
           
           CHANGED_FILES=()
-          MISSING_FILES=()
           UNCHANGED_FILES=()
           
           # Read files from JSON array
           while IFS= read -r file; do
             echo ""
             echo "Checking: $file"
-            
-            # Check if file exists in both versions
-            if ! git cat-file -e "$CURRENT_VERSION:$file" 2>/dev/null; then
-              echo "  ⚠️  File not found in $CURRENT_VERSION"
-              MISSING_FILES+=("$file")
-              CHANGED_FILES+=("$file")
-              continue
-            fi
-            
-            if ! git cat-file -e "$LATEST_VERSION:$file" 2>/dev/null; then
-              echo "  ⚠️  File not found in $LATEST_VERSION"
-              MISSING_FILES+=("$file")
-              CHANGED_FILES+=("$file")
-              continue
-            fi
             
             # Check for changes using git diff
             if git diff --quiet --ignore-all-space "$CURRENT_VERSION" "$LATEST_VERSION" -- "$file"; then
@@ -177,17 +161,14 @@ jobs:
           echo "  Total files checked: $(echo "$FILES_JSON" | jq 'length')"
           echo "  Changed: ${#CHANGED_FILES[@]}"
           echo "  Unchanged: ${#UNCHANGED_FILES[@]}"
-          echo "  Missing: ${#MISSING_FILES[@]}"
           echo "=================================================="
           
           # Convert arrays to JSON
           CHANGED_JSON=$(printf '%s\n' "${CHANGED_FILES[@]}" | jq -R . | jq -s .)
-          MISSING_JSON=$(printf '%s\n' "${MISSING_FILES[@]}" | jq -R . | jq -s .)
           UNCHANGED_JSON=$(printf '%s\n' "${UNCHANGED_FILES[@]}" | jq -R . | jq -s .)
           
           # Set outputs
           echo "changed_files=$CHANGED_JSON" >> $GITHUB_OUTPUT
-          echo "missing_files=$MISSING_JSON" >> $GITHUB_OUTPUT
           echo "unchanged_files=$UNCHANGED_JSON" >> $GITHUB_OUTPUT
           
           if [ ${#CHANGED_FILES[@]} -gt 0 ]; then
